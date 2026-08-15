@@ -680,7 +680,7 @@
     users = users.filter(u => !(u.state === 'leaving' && u.opacity <= 0));
   }
 
-  function drawUserTrail(u){
+  function drawUserTrail(u, dim){
     const pts = u.trail;
     if (pts.length < 2) return;
     for (let i = 1; i < pts.length; i++){
@@ -688,7 +688,7 @@
       ctx.beginPath();
       ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
       ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.strokeStyle = `rgba(210,225,255,${t * t * 0.5 * u.opacity})`;
+      ctx.strokeStyle = `rgba(210,225,255,${t * t * 0.5 * u.opacity * dim})`;
       ctx.lineWidth = Math.max(0.5, 1.6 * t);
       ctx.stroke();
     }
@@ -700,9 +700,15 @@
       const x = cx + Math.cos(u.angle) * u.radius;
       const y = cy + Math.sin(u.angle) * u.radius;
 
-      drawUserTrail(u);
+      // "висит" на наведённой орбите — только пристыкованные к ней пользователи;
+      // центральная вспышка (flashFixed) — исключение, её не приглушаем никогда
+      const belongsToHoveredOrbit = u.state === 'atWorkshop' && u.workshop && u.workshop.id === hoveredOrbitId;
+      const dim = dimFactor(belongsToHoveredOrbit);
+
+      drawUserTrail(u, dim);
 
       if (u.flashColor && now < u.flashUntil){
+        const flashDim = u.flashFixed ? 1 : dim;
         const elapsed = now - u.flashStart;
         // быстрое разгорание до пика; при затухании гаснет яркость, но не радиус
         let sizeK, alphaK;
@@ -719,9 +725,9 @@
         const fy = u.flashFixed ? cy : y;
         ctx.beginPath();
         ctx.arc(fx, fy, 2 + u.flashSize * sizeK, 0, Math.PI * 2);
-        ctx.fillStyle = `${u.flashColor}${0.55 * alphaK * u.opacity})`;
-        ctx.shadowColor = `${u.flashColor}0.9)`;
-        ctx.shadowBlur = 10 + u.flashSize;
+        ctx.fillStyle = `${u.flashColor}${0.55 * alphaK * u.opacity * flashDim})`;
+        ctx.shadowColor = `${u.flashColor}${0.9 * flashDim})`;
+        ctx.shadowBlur = (10 + u.flashSize) * flashDim;
         ctx.fill();
         ctx.shadowBlur = 0;
 
@@ -753,13 +759,13 @@
 
       ctx.beginPath();
       ctx.arc(x, y, 1.8, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(210,225,255,${0.6 * u.opacity})`;
+      ctx.fillStyle = `rgba(210,225,255,${0.6 * u.opacity * dim})`;
       ctx.fill();
 
       if (SHOW_USER_IDS && u.opacity > 0.05){
         const align = Math.cos(u.angle) > 0.15 ? 'left' : (Math.cos(u.angle) < -0.15 ? 'right' : 'center');
         ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-        ctx.fillStyle = `rgba(210,225,255,${0.8 * u.opacity})`;
+        ctx.fillStyle = `rgba(210,225,255,${0.8 * u.opacity * dim})`;
         ctx.textAlign = align;
         ctx.textBaseline = 'middle';
         const lOffset = 8;
@@ -825,11 +831,45 @@
     mouseY = -1;
   });
 
+  // ---------- Наведение на орбиту: приглушаем всё остальное ----------
+  // орбиты — это радиусы w.radius, у каждой мастерской свой (с случайным
+  // смещением из layoutWorkshops), поэтому "какая орбита под курсором"
+  // определяем по тому, чей радиус ближе всего к текущему расстоянию
+  // курсора от центра сцены — а не по фиксированному списку радиусов.
+  let hoveredOrbitId = null;
+  const ORBIT_HOVER_TOLERANCE = 8; // px
+
+  function updateHoveredOrbit(){
+    if (mouseX < 0 && mouseY < 0){
+      hoveredOrbitId = null;
+      return;
+    }
+    const mouseR = Math.hypot(mouseX - cx, mouseY - cy);
+    let best = null;
+    let bestDiff = ORBIT_HOVER_TOLERANCE;
+    workshops.forEach(w => {
+      const diff = Math.abs(mouseR - w.radius);
+      if (diff < bestDiff){
+        bestDiff = diff;
+        best = w.id;
+      }
+    });
+    hoveredOrbitId = best;
+  }
+
+  // множитель яркости: 1 — если наведения нет вообще или это то, что нужно
+  // выделить; DIM — если наведение есть, но это "остальное"
+  const ORBIT_DIM = 0.1;
+  function dimFactor(isHighlighted){
+    return hoveredOrbitId === null ? 1 : (isHighlighted ? 1 : ORBIT_DIM);
+  }
+
   function drawOrbits(){
     if (!SHOW_ORBITS) return;
-    ctx.strokeStyle = 'rgba(200,200,220,0.09)';
     ctx.lineWidth = 1;
     workshops.forEach(w => {
+      const dim = dimFactor(w.id === hoveredOrbitId);
+      ctx.strokeStyle = `rgba(200,200,220,${(w.id === hoveredOrbitId ? 0.45 : 0.09) * dim})`;
       ctx.beginPath();
       ctx.arc(cx, cy, w.radius, 0, Math.PI * 2);
       ctx.stroke();
@@ -847,18 +887,19 @@
 
       const x = cx + Math.cos(w.angle) * w.radius;
       const y = cy + Math.sin(w.angle) * w.radius;
+      const dim = dimFactor(w.id === hoveredOrbitId);
 
       ctx.beginPath();
       ctx.arc(x, y, w.dotR, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(235,235,240,0.85)';
-      ctx.shadowColor = 'rgba(220,220,235,0.6)';
-      ctx.shadowBlur = w.dotR * 2;
+      ctx.fillStyle = `rgba(235,235,240,${0.85 * dim})`;
+      ctx.shadowColor = `rgba(220,220,235,${0.6 * dim})`;
+      ctx.shadowBlur = w.dotR * 2 * dim;
       ctx.fill();
       ctx.shadowBlur = 0;
 
       const align = Math.cos(w.angle) > 0.15 ? 'left' : (Math.cos(w.angle) < -0.15 ? 'right' : 'center');
       ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-      ctx.fillStyle = 'rgba(220,220,230,0.65)';
+      ctx.fillStyle = `rgba(220,220,230,${0.65 * dim})`;
       ctx.textAlign = align;
       ctx.textBaseline = 'middle';
       const lOffset = w.dotR + 8;
@@ -898,13 +939,16 @@
     ctx.fillStyle = '#080808';
     ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
+    updateHoveredOrbit();
+    const starDim = dimFactor(false); // фон всегда часть "остального"
+
     stars.forEach(st => {
       const a = st.angle + rotation;
       const x = cx + Math.cos(a) * st.radius;
       const y = cy + Math.sin(a) * st.radius;
       ctx.beginPath();
       ctx.arc(x, y, st.r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(200,200,220,${st.a})`;
+      ctx.fillStyle = `rgba(200,200,220,${st.a * starDim})`;
       ctx.fill();
     });
 
