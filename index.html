@@ -95,13 +95,29 @@
     z-index: 5;
     -webkit-user-select: none; user-select: none;
   }
-  #settings-panel h2 {
-    margin: 0 0 10px; font-size: 10px; font-weight: 600;
-    letter-spacing: 0.22em; color: rgba(230,230,240,0.5);
-    text-transform: uppercase;
+  #settings-panel .settings-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
     padding-bottom: 9px;
     border-bottom: 1px solid rgba(255,255,255,0.18);
   }
+  #settings-panel h2 {
+    margin: 0; font-size: 10px; font-weight: 600;
+    letter-spacing: 0.22em; color: rgba(230,230,240,0.5);
+    text-transform: uppercase;
+  }
+  #reset-btn {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.35);
+    color: rgba(230,230,240,0.7);
+    font: 600 9px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 3px 7px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  #reset-btn:hover { border-color: #fff; color: #fff; }
   .settings-toggle {
     display: flex; align-items: center; justify-content: space-between;
     margin-bottom: 10px; padding-bottom: 10px;
@@ -187,7 +203,10 @@
 </div>
 
 <div id="settings-panel">
-  <h2>Эмуляция</h2>
+  <div class="settings-header">
+    <h2>Эмуляция</h2>
+    <button id="reset-btn" title="Сбросить эмуляцию и отрисовку">Reset</button>
+  </div>
   <div class="settings-toggle">
     <span>Пользователи</span>
     <label class="switch">
@@ -287,6 +306,10 @@
   let rotation = 0;
   let lastTime = performance.now();
 
+  // ---------- Полноэкранная белая вспышка (кнопка Reset) ----------
+  const SCREEN_FLASH_MS = 250;
+  let screenFlashStart = -Infinity;
+
   // ---------- Мастерские (загружаются из data/workshops.json) ----------
   // Резервный список на случай, если fetch не удался (например, файл
   // открыт напрямую как file:// и браузер блокирует локальный fetch).
@@ -361,12 +384,12 @@
   // ---------- Настройки эмуляции (панель справа внизу) ----------
   const SETTINGS = {
     emulationEnabled: false,
-    spawnMin: 1200, spawnMax: 3000,       // мс между появлениями новых пользователей
-    decisionMin: 6000, decisionMax: 16000, // сколько пользователь "думает" на внешнем контуре
-    bookingChance: 45,                     // % шанс открыть бронь вместо ухода с сайта
-    atWorkshopMin: 3000, atWorkshopMax: 7000, // сколько пользователь проводит у мастерской
-    createdChance: 55,                     // % бронь подтвердят
-    blockedChance: 18                      // % бронь заблокируют (остальное — отмена)
+    spawnMin: 200, spawnMax: 400,          // мс между появлениями новых пользователей
+    decisionMin: 400, decisionMax: 10000,  // сколько пользователь "думает" на внешнем контуре
+    bookingChance: 0,                      // % шанс открыть бронь вместо ухода с сайта
+    atWorkshopMin: 3000, atWorkshopMax: 15000, // сколько пользователь проводит у мастерской
+    createdChance: 0,                      // % бронь подтвердят
+    blockedChance: 0                       // % бронь заблокируют (остальное — отмена)
   };
 
   // ---------- Статистика (панель справа вверху) ----------
@@ -407,6 +430,7 @@
     bind('set-atworkshop-max', 'atWorkshopMax', true);
     bind('set-created-chance', 'createdChance', true);
     bind('set-blocked-chance', 'blockedChance', true);
+    document.getElementById('reset-btn').addEventListener('click', resetEmulation);
   })();
 
   // ---------- Пользователи (эмуляция) ----------
@@ -931,6 +955,24 @@
     }
   }
 
+  // ---------- Сброс эмуляции и отрисовки в исходное положение ----------
+  function resetEmulation(){
+    users = [];
+    nextUserId = 0;
+    userSpawnTimer = 0;
+    scheduleNextUserSpawn();
+    STATS.created = 0;
+    STATS.cancelled = 0;
+    STATS.blocked = 0;
+    STATS.exited = 0;
+    hoveredOrbitId = null;
+    rotation = 0;
+    layoutWorkshops();
+    makeStars();
+    updateStatsPanel();
+    screenFlashStart = performance.now();
+  }
+
   function draw(now){
     const dt = now - lastTime;
     lastTime = now;
@@ -958,6 +1000,14 @@
     updateUsers(dt, now);
     drawUsers();
     updateStatsPanel();
+
+    // полноэкранная белая вспышка поверх всего при сбросе (кнопка Reset)
+    const flashElapsed = now - screenFlashStart;
+    if (flashElapsed < SCREEN_FLASH_MS){
+      const flashAlpha = 1 - flashElapsed / SCREEN_FLASH_MS;
+      ctx.fillStyle = `rgba(255,255,255,${flashAlpha})`;
+      ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+    }
 
     requestAnimationFrame(draw);
   }
