@@ -453,10 +453,10 @@
     filterNode.Q.value = 0.6;
     filterNode.connect(activityGain);
 
-    const baseFreq = 55; // низкий гул кампуса
+    const baseFreq = 65; // низкий гул кампуса
     [-6, 0, 7].forEach(cents => {
       const osc = audioCtx.createOscillator();
-      osc.type = 'sine';
+      osc.type = 'triangle'; // богаче обертонами, чем чистая синусоида — лучше слышно на тихой громкости
       osc.frequency.value = baseFreq;
       osc.detune.value = cents;
       const g = audioCtx.createGain();
@@ -483,12 +483,19 @@
       initAudio();
       if (audioCtx.state === 'suspended') audioCtx.resume();
       masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
-      masterGain.gain.linearRampToValueAtTime(0.14, audioCtx.currentTime + 1.2);
+      masterGain.gain.linearRampToValueAtTime(0.35, audioCtx.currentTime + 1.2);
     } else if (audioCtx){
       masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
       masterGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.8);
     }
   }
+
+  // подстраховка: некоторые браузеры не до конца разблокируют AudioContext
+  // по событию change на чекбоксе — досыпаем resume() на любое следующее
+  // взаимодействие со страницей, если звук должен быть включён
+  window.addEventListener('pointerdown', () => {
+    if (soundEnabled && audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }, { passive: true });
 
   function updateAudio(now){
     if (!soundEnabled || !audioCtx) return;
