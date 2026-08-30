@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Стартер визуализации — Laravel Echo</title>
+
+    <!--
+        Заготовка для экрана визуализации (ТЗ: ws_events.md, документация: docs/websocket-events.md).
+
+        Что уже сделано:
+          - подключение к сокету через Laravel Echo;
+          - загрузка снапшота активных сессий при старте и при каждом переподключении;
+          - хранилище сессий и разбор конверта событий.
+
+        Что предстоит сделать фронтенду:
+          - отрисовку «солнечной системы» вместо заглушек render* внизу файла.
+
+        Открывается двумя способами:
+          1) с домена приложения: https://ucampus.u.university/ws-starter.html — настроится само;
+          2) со своего домена или из сборки: добавьте ?api=https://ucampus.u.university
+             и попросите бэкенд внести ваш origin в SOCKUDO_ALLOWED_ORIGINS.
+    -->
+
+    <script src="https://unpkg.com/pusher-js@8.4.0/dist/web/pusher.min.js"></script>
+    <script src="https://unpkg.com/laravel-echo@1.16.1/dist/echo.iife.js"></script>
+
+    <style>
+        :root { --bg: #0d1117; --panel: #161b22; --border: #262d38; --text: #e6edf7; --muted: #8b98ad; --accent: #6ea8fe; --ok: #4ade80; --off: #f87171; }
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 28px 24px; background: var(--bg); color: var(--text); font: 15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; }
+        .wrap { max-width: 1080px; margin: 0 auto; }
+        h1 { font-size: 20px; margin: 0 0 6px; }
+        .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+        .status { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; margin-bottom: 20px; }
+        .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--off); }
+        .dot--on { background: var(--ok); }
+        .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        @media (max-width: 800px) { .panels { grid-template-columns: 1fr; } }
+        .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+        .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+        .row { padding: 7px 0; border-bottom: 1px solid var(--border); }
+        .row:last-child { border-bottom: none; }
+        .tag { color: var(--accent); }
+        #log { max-height: 420px; overflow-y: auto; }
+        .empty { color: var(--muted); font-size: 13px; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>Стартер экрана визуализации</h1>
+    <div class="sub">
+        Транспорт и состояние уже работают. Дальше — заменить заглушки <span class="mono">render*</span> на анимацию звёзд.
+    </div>
+
+    <div class="status">
+        <span class="dot" id="status-dot"></span>
+        <span id="status-text">подключение…</span>
+    </div>
+
+    <div class="panels">
+        <div class="panel">
+            <h2>Активные сессии (состояние экрана)</h2>
+            <div id="sessions"><div class="empty">пусто</div></div>
+        </div>
+        <div class="panel">
+            <h2>Поток событий</h2>
+            <div id="log"><div class="empty">событий пока не было</div></div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    'use strict'
+
+    const params = new URLSearchParams(window.location.search)
+
+    // Базовый адрес приложения. Пусто = стартер открыт с того же домена, что и кабинет
+    const API_BASE = (params.get('api') || '').replace(/\/$/, '')
+
+    /**
+     * Состояние экрана: одна запись = одна звезда.
+     * Ключ - session_id (не user_id: один пользователь может открыть несколько вкладок).
+     */
+    const sessions = new Map()
+
+    /**
+     * Справочник мастерских: в событиях приходит только workshop_id,
+     * названия и цвета орбит берутся отсюда.
+     */
+    const workshops = new Map()
+
+    boot()
+
+    async function boot() {
+        let config
+
+        try {
+            const response = await fetch(API_BASE + '/visualization/config')
+            config = await response.json()
+        } catch (error) {
+            setStatus(false, 'не удалось получить параметры подключения')
+            console.error('Проверьте параметр ?api= и доступность /visualization/config', error)
+            return
+        }
+
+        await loadWorkshops()
+
+        connect(config)
+    }
+
+    async function loadWorkshops() {
+        try {
+            const response = await fetch(API_BASE + '/visualization/workshops')
+            const data = await response.json()
+
+            data.workshops.forEach((workshop) => workshops.set(workshop.id, workshop))
+        } catch (error) {
+            console.error('Не удалось загрузить справочник мастерских', error)
+        }
+    }
+
+    function connect(config) {
+        // Хост сокета: из конфига, иначе из адреса приложения (?api=), иначе текущая страница.
+        // Порядок важен, когда стартер открыт с другого домена, например с localhost
+        const apiUrl = API_BASE ? new URL(API_BASE) : null
+        const host = config.host || (apiUrl ? apiUrl.hostname : window.location.hostname)
+        const forceTLS = config.scheme === 'https'
+
+        window.Echo = new Echo({
+            broadcaster: 'pusher',
+            key: config.key,
+            wsHost: host,
+            wsPort: config.port,
+            wssPort: config.port,
+            forceTLS: forceTLS,
+            encrypted: forceTLS,
+            disableStats: true,
+            enabledTransports: ['ws', 'wss'],
+            // cluster обязателен для pusher-js, но self-hosted сервер его игнорирует
+            cluster: 'mt1',
+        })
+
+        const connection = window.Echo.connector.pusher.connection
+
+        connection.bind('connected', () => {
+            setStatus(true, 'подключено к каналу ' + config.channel)
+            // Снапшот запрашивается при каждом подключении, иначе после перезагрузки
+            // или обрыва экран остался бы пустым до первого нового события
+            loadSnapshot(config)
+        })
+
+        connection.bind('disconnected', () => setStatus(false, 'соединение потеряно'))
+        connection.bind('error', () => setStatus(false, 'ошибка соединения'))
+
+        const channel = window.Echo.channel(config.channel)
+
+        // Точка перед именем обязательна: сервер задает собственные имена событий
+        channel.listen('.user.appeared', onUserAppeared)
+        channel.listen('.user.schedule.opened', onScheduleOpened)
+        channel.listen('.user.schedule.closed', onScheduleClosed)
+        channel.listen('.user.booking.created', onBookingCreated)
+        channel.listen('.user.booking.blocked', onBookingBlocked)
+        channel.listen('.user.exit', onUserExit)
+    }
+
+    async function loadSnapshot(config) {
+        try {
+            const response = await fetch(API_BASE + '/visualization/snapshot')
+            const envelope = await response.json()
+
+            sessions.clear()
+
+            envelope.payload.sessions.forEach((session) => sessions.set(session.session_id, session))
+
+            renderSnapshot(envelope.payload.sessions)
+        } catch (error) {
+            console.error('Не удалось загрузить снапшот', error)
+        }
+    }
+
+    /* ----------------------------------------------------------------------
+       Обработчики событий.
+       Конверт: { event, timestamp, session_id, payload }.
+       Хранилище sessions обновляется здесь, отрисовка - в render* ниже.
+       ---------------------------------------------------------------------- */
+
+    function onUserAppeared(envelope) {
+        upsert(envelope, {state: 'drifting', workshop_id: null})
+        log(envelope)
+        renderAppeared(envelope.session_id, sessions.get(envelope.session_id), envelope.timestamp)
+    }
+
+    function onScheduleOpened(envelope) {
+        // Переход между расписаниями разных РЦ приходит новым opened без промежуточного closed:
+        // звезда плавно перелетает с орбиты на орбиту
+        upsert(envelope, {state: 'orbiting', workshop_id: envelope.payload.workshop_id})
+        log(envelope)
+        renderOrbitEnter(envelope.session_id, envelope.payload.workshop_id, envelope.timestamp)
+    }
+
+    function onScheduleClosed(envelope) {
+        upsert(envelope, {state: 'drifting', workshop_id: null})
+        log(envelope)
+        renderOrbitLeave(envelope.session_id, envelope.payload.workshop_id, envelope.timestamp)
+    }
+
+    function onBookingCreated(envelope) {
+        upsert(envelope, {state: 'booked', workshop_id: envelope.payload.workshop_id})
+        log(envelope)
+        renderBookingFlash(envelope.session_id, envelope.payload, envelope.timestamp)
+    }
+
+    function onBookingBlocked(envelope) {
+        // Состояние не меняется: звезда остается на орбите РЦ
+        log(envelope)
+        renderBookingBlocked(envelope.session_id, envelope.payload.reason, envelope.timestamp)
+    }
+
+    function onUserExit(envelope) {
+        sessions.delete(envelope.session_id)
+        log(envelope)
+        renderExit(envelope.session_id, envelope.timestamp)
+        renderSessions()
+    }
+
+    function upsert(envelope, changes) {
+        const current = sessions.get(envelope.session_id) || {session_id: envelope.session_id}
+
+        sessions.set(envelope.session_id, Object.assign(current, {
+            user_id: envelope.payload.user_id,
+            user_role: envelope.payload.user_role,
+            user_course: envelope.payload.user_course,
+        }, changes))
+
+        renderSessions()
+    }
+
+    /* ----------------------------------------------------------------------
+       ЗАГЛУШКИ ОТРИСОВКИ - это и есть место для визуализации.
+       Сейчас выводят состояние текстом; замените на анимацию сцены.
+       ---------------------------------------------------------------------- */
+
+    function renderSnapshot(list) {
+        // TODO: расставить звезды по экрану: drifting - в открытом космосе,
+        // orbiting и booked - на орбите своего РЦ. Без анимации появления,
+        // это восстановление картины после перезагрузки
+        renderSessions()
+    }
+
+    function renderAppeared(sessionId, session, timestamp) {
+        // TODO: зажечь новую звезду на внешнем контуре
+    }
+
+    function renderOrbitEnter(sessionId, workshopId, timestamp) {
+        // TODO: увести звезду на орбиту РЦ workshopId.
+        // Название и цвет орбиты: workshops.get(workshopId) - { name, name_en, color, cover_url }
+    }
+
+    function renderOrbitLeave(sessionId, workshopId, timestamp) {
+        // TODO: вернуть звезду с орбиты в открытый космос
+    }
+
+    function renderBookingFlash(sessionId, payload, timestamp) {
+        // TODO: полет в центр системы со вспышкой.
+        // После вспышки сервер вернет сессию в drifting следующим heartbeat,
+        // поэтому решение о судьбе звезды в центре - за фронтом (растворить, оставить следом)
+    }
+
+    function renderBookingBlocked(sessionId, reason, timestamp) {
+        // TODO: подсветить неудачную попытку. reason: no_photo | no_induction | slot_taken | other
+    }
+
+    function renderExit(sessionId, timestamp) {
+        // TODO: погасить звезду
+    }
+
+    /* ----------------------------------------------------------------------
+       Служебная отладочная часть: удаляется вместе с версткой заглушек
+       ---------------------------------------------------------------------- */
+
+    const sessionsEl = document.getElementById('sessions')
+    const logEl = document.getElementById('log')
+
+    function renderSessions() {
+        if (!sessions.size) {
+            sessionsEl.innerHTML = '<div class="empty">пусто</div>'
+            return
+        }
+
+        sessionsEl.innerHTML = Array.from(sessions.values()).map((session) => {
+            const workshop = workshops.get(session.workshop_id)
+            const orbit = workshop
+                ? ' · <span style="color: ' + workshop.color + '">' + escapeHtml(workshop.name) + '</span>'
+                : (session.workshop_id ? ' · РЦ ' + session.workshop_id : '')
+
+            return '<div class="row mono">'
+                + '<span class="tag">' + session.session_id.slice(0, 8) + '</span> '
+                + escapeHtml(session.user_role || '') + ' · ' + escapeHtml(session.state || '')
+                + orbit
+                + '</div>'
+        }).join('')
+    }
+
+    function log(envelope) {
+        if (logEl.querySelector('.empty')) {
+            logEl.innerHTML = ''
+        }
+
+        const time = new Date(envelope.timestamp).toLocaleTimeString('ru-RU')
+        const row = document.createElement('div')
+
+        row.className = 'row mono'
+        row.innerHTML = '<span class="tag">' + escapeHtml(envelope.event) + '</span> '
+            + time + ' · ' + escapeHtml(envelope.session_id.slice(0, 8))
+
+        logEl.prepend(row)
+
+        while (logEl.children.length > 100) {
+            logEl.lastChild.remove()
+        }
+    }
+
+    function setStatus(connected, text) {
+        document.getElementById('status-dot').classList.toggle('dot--on', connected)
+        document.getElementById('status-text').textContent = text
+    }
+
+    function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        })[char])
+    }
+})()
+</script>
+</body>
+</html>
