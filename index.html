@@ -1124,7 +1124,10 @@
       loadLiveSnapshot();
     });
     connection.bind('disconnected', () => setLiveStatus('error', 'НЕТ СВЯЗИ'));
-    connection.bind('error', () => setLiveStatus('error', 'ОШИБКА СОЕДИНЕНИЯ'));
+    connection.bind('error', (error) => {
+      console.error('Ошибка WebSocket-соединения визуализации', error);
+      setLiveStatus('error', 'ОШИБКА СОЕДИНЕНИЯ');
+    });
 
     const channel = window.Echo.channel(config.channel);
     // точка перед именем обязательна: сервер задаёт собственные имена событий
@@ -1134,6 +1137,10 @@
     channel.listen('.user.booking.created', onLiveBookingCreated);
     channel.listen('.user.booking.blocked', onLiveBookingBlocked);
     channel.listen('.user.exit', onLiveUserExit);
+
+    // pusher-js в этой связке не подключается сам при создании — без явного
+    // connect() соединение так и остаётся в состоянии disconnected навсегда
+    window.Echo.connector.pusher.connect();
   }
 
   async function bootLive(){
