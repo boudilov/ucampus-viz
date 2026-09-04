@@ -63,31 +63,52 @@
   }
   #info-btn:hover { background: rgba(255,255,255,0.12); border-color: rgba(220,220,230,0.6); }
 
-  #info-modal { position: fixed; inset: 0; z-index: 10; display: none; }
-  #info-modal.open { display: block; }
-  #info-modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.6); }
-  #info-modal-panel {
-    position: relative; margin: 12vh auto 0; width: min(360px, 86vw);
+  /* оверлей/панель модального окна — переиспользуется горячими клавишами (I) и потоком WS (W) */
+  .modal-overlay { position: fixed; inset: 0; z-index: 10; display: none; }
+  .modal-overlay.open { display: block; }
+  .modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.6); }
+  .modal-panel {
+    position: relative;
     background: rgba(18,18,22,0.95);
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 10px;
-    padding: 16px 18px 18px;
     color: rgba(230,230,240,0.9);
     font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     box-shadow: 0 10px 40px rgba(0,0,0,0.5);
   }
-  #info-modal-header {
+  .modal-header {
     display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 12px; font-weight: 600; letter-spacing: 0.04em;
+    font-weight: 600; letter-spacing: 0.04em;
   }
-  #info-modal-close {
+  .modal-close {
     background: none; border: none; color: inherit; font-size: 18px;
     cursor: pointer; line-height: 1; padding: 0 4px;
   }
+
+  #info-modal-panel { margin: 12vh auto 0; width: min(360px, 86vw); padding: 16px 18px 18px; }
+  #info-modal-header { margin-bottom: 12px; }
   #info-modal-table { width: 100%; border-collapse: collapse; }
   #info-modal-table td { padding: 7px 4px; border-top: 1px solid rgba(255,255,255,0.08); }
   #info-modal-table td:first-child { width: 46px; font-weight: 600; color: #fff; }
   #info-modal-table tr:first-child td { border-top: none; }
+
+  #ws-log-panel {
+    margin: 6vh auto 0; width: min(560px, 92vw); max-height: 84vh;
+    padding: 14px 16px 16px;
+    display: flex; flex-direction: column;
+  }
+  #ws-log-header { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  #ws-log-sub { font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: rgba(230,230,240,0.4); margin-bottom: 10px; }
+  #ws-log-list { overflow-y: auto; flex: 1; }
+  .ws-log-row {
+    padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.07);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.5;
+  }
+  .ws-log-row:first-child { border-top: none; }
+  .ws-log-row .ws-log-meta { color: rgba(230,230,240,0.4); margin-bottom: 3px; }
+  .ws-log-row .ws-log-event { color: #fff; }
+  .ws-log-row pre { margin: 0; white-space: pre-wrap; word-break: break-word; color: rgba(210,225,255,0.8); }
+  #ws-log-list .empty { color: rgba(230,230,240,0.35); font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 
   #settings-panel {
     position: fixed; right: 16px; bottom: 16px;
@@ -191,12 +212,12 @@
 
 <button id="info-btn" title="Горячие клавиши (I)" aria-label="Горячие клавиши">i</button>
 
-<div id="info-modal">
-  <div id="info-modal-backdrop"></div>
-  <div id="info-modal-panel">
-    <div id="info-modal-header">
+<div id="info-modal" class="modal-overlay">
+  <div id="info-modal-backdrop" class="modal-backdrop"></div>
+  <div id="info-modal-panel" class="modal-panel">
+    <div id="info-modal-header" class="modal-header">
       <span>Горячие клавиши</span>
-      <button id="info-modal-close" aria-label="Закрыть">&times;</button>
+      <button id="info-modal-close" class="modal-close" aria-label="Закрыть">&times;</button>
     </div>
     <table id="info-modal-table">
       <tr><td>L</td><td>показать/скрыть названия мастерских</td></tr>
@@ -206,8 +227,21 @@
       <tr><td>M</td><td>показать/скрыть "звёзды" мастерских</td></tr>
       <tr><td>E</td><td>показать/скрыть панель эмуляции и настроек</td></tr>
       <tr><td>S</td><td>включить/выключить звук</td></tr>
+      <tr><td>W</td><td>показать/скрыть прямую трансляцию WS-сообщений</td></tr>
       <tr><td>I</td><td>показать/скрыть это окно</td></tr>
     </table>
+  </div>
+</div>
+
+<div id="ws-log-modal" class="modal-overlay">
+  <div id="ws-log-backdrop" class="modal-backdrop"></div>
+  <div id="ws-log-panel" class="modal-panel">
+    <div id="ws-log-header" class="modal-header">
+      <span>WS-трафик</span>
+      <button id="ws-log-close" class="modal-close" aria-label="Закрыть">&times;</button>
+    </div>
+    <div id="ws-log-sub">канал <span id="ws-log-channel">—</span> · сырые сообщения сокета, новые сверху</div>
+    <div id="ws-log-list"><div class="empty">сообщений пока не было</div></div>
   </div>
 </div>
 
@@ -1130,6 +1164,9 @@
       console.error('Ошибка WebSocket-соединения визуализации', error);
       setLiveStatus('error', 'ОШИБКА СОЕДИНЕНИЯ');
     });
+    // сырые сообщения сокета (включая служебные pusher:*) — для модалки "WS-трафик" (клавиша W)
+    connection.bind('message', (message) => logWsMessage(message));
+    document.getElementById('ws-log-channel').textContent = config.channel;
 
     const channel = window.Echo.channel(config.channel);
     // точка перед именем обязательна: сервер задаёт собственные имена событий
@@ -1205,6 +1242,57 @@
   infoClose.addEventListener('click', closeInfoModal);
   infoModal.querySelector('#info-modal-backdrop').addEventListener('click', closeInfoModal);
 
+  // ---------- Модальное окно "WS-трафик" (клавиша W) ----------
+  // Прямая трансляция сырых сообщений сокета — от connection.bind('message', ...)
+  // в connectLive(), включая служебные pusher:*/pusher_internal:*, не только
+  // наши шесть событий visualization-канала
+  const wsLogModal = document.getElementById('ws-log-modal');
+  const wsLogClose = document.getElementById('ws-log-close');
+  const wsLogListEl = document.getElementById('ws-log-list');
+
+  function openWsLogModal(){ wsLogModal.classList.add('open'); }
+  function closeWsLogModal(){ wsLogModal.classList.remove('open'); }
+  function toggleWsLogModal(){ wsLogModal.classList.toggle('open'); }
+
+  wsLogClose.addEventListener('click', closeWsLogModal);
+  wsLogModal.querySelector('#ws-log-backdrop').addEventListener('click', closeWsLogModal);
+
+  const WS_LOG_MAX = 150; // старые строки обрезаются, чтобы модалка не разрослась за часы работы
+
+  function formatWsData(data){
+    if (data == null) return '';
+    if (typeof data === 'string'){
+      try { return JSON.stringify(JSON.parse(data), null, 2); }
+      catch (e) { return data; }
+    }
+    try { return JSON.stringify(data, null, 2); }
+    catch (e) { return String(data); }
+  }
+
+  function logWsMessage(message){
+    if (wsLogListEl.querySelector('.empty')) wsLogListEl.innerHTML = '';
+
+    const row = document.createElement('div');
+    row.className = 'ws-log-row';
+
+    const meta = document.createElement('div');
+    meta.className = 'ws-log-meta';
+    meta.textContent = new Date().toLocaleTimeString('ru-RU') + (message.channel ? ' · ' + message.channel : '') + ' · ';
+    const eventTag = document.createElement('span');
+    eventTag.className = 'ws-log-event';
+    eventTag.textContent = message.event || '(без имени события)';
+    meta.appendChild(eventTag);
+
+    const pre = document.createElement('pre');
+    pre.textContent = formatWsData(message.data);
+
+    row.appendChild(meta);
+    row.appendChild(pre);
+    wsLogListEl.prepend(row);
+
+    while (wsLogListEl.children.length > WS_LOG_MAX) wsLogListEl.lastChild.remove();
+  }
+
   // панель эмуляции/настроек скрыта по умолчанию (атрибут hidden в разметке) — только по клавише E
   const settingsPanelEl = document.getElementById('settings-panel');
   const soundCheckbox = document.getElementById('set-sound');
@@ -1232,11 +1320,15 @@
       soundCheckbox.checked = !soundCheckbox.checked;
       soundCheckbox.dispatchEvent(new Event('change'));
     }
+    if (e.key === 'w' || e.key === 'W'){
+      toggleWsLogModal();
+    }
     if (e.key === 'i' || e.key === 'I'){
       toggleInfoModal();
     }
     if (e.key === 'Escape'){
       closeInfoModal();
+      closeWsLogModal();
     }
   });
 
