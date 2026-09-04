@@ -667,6 +667,7 @@
       // WS-событий, а не таймер (см. ранний выход в maybeTriggerNextEvent)
       decisionAt: Infinity,
       atWorkshopUntil: Infinity,
+      role: null, // user_role сессии (только у live-звёзд) — влияет на цвет точки, см. actorRgb()
       workshop: null,
       localAngle: 0,        // угол на маленькой орбите вокруг мастерской (atWorkshop)
       localRadius: 0,       // текущий радиус этой маленькой орбиты
@@ -906,15 +907,22 @@
     users = users.filter(u => !(u.state === 'leaving' && u.opacity <= 0));
   }
 
+  // цвет точки-актора по роли: administrator — с холодным голубоватым акцентом
+  // (исходный оттенок "точек-акторов" из styles.md), все остальные — ровный белый
+  function actorRgb(u){
+    return u.role === 'administrator' ? '210,225,255' : '235,235,240';
+  }
+
   function drawUserTrail(u, dim){
     const pts = u.trail;
     if (pts.length < 2) return;
+    const rgb = actorRgb(u);
     for (let i = 1; i < pts.length; i++){
       const t = i / (pts.length - 1); // 0 (старое) → 1 (голова)
       ctx.beginPath();
       ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
       ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.strokeStyle = `rgba(210,225,255,${t * t * 0.5 * u.opacity * dim})`;
+      ctx.strokeStyle = `rgba(${rgb},${t * t * 0.5 * u.opacity * dim})`;
       ctx.lineWidth = Math.max(0.5, 1.6 * t);
       ctx.stroke();
     }
@@ -983,15 +991,16 @@
         }
       }
 
+      const rgb = actorRgb(u);
       ctx.beginPath();
       ctx.arc(x, y, 1.8, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(210,225,255,${0.6 * u.opacity * dim})`;
+      ctx.fillStyle = `rgba(${rgb},${0.6 * u.opacity * dim})`;
       ctx.fill();
 
       if (SHOW_USER_IDS && u.opacity > 0.05){
         const align = Math.cos(u.angle) > 0.15 ? 'left' : (Math.cos(u.angle) < -0.15 ? 'right' : 'center');
         ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-        ctx.fillStyle = `rgba(210,225,255,${0.8 * u.opacity * dim})`;
+        ctx.fillStyle = `rgba(${rgb},${0.8 * u.opacity * dim})`;
         ctx.textAlign = align;
         ctx.textBaseline = 'middle';
         const lOffset = 8;
@@ -1051,8 +1060,13 @@
     return u;
   }
 
-  function getOrSpawnLiveUser(sessionId){
-    return findLiveUser(sessionId) || spawnLiveUser(sessionId);
+  // role передаётся из envelope.payload.user_role, если он в этот момент известен —
+  // применяется и к уже существующей звезде (на случай если appeared пропущен и роль
+  // впервые пришла с более поздним событием)
+  function getOrSpawnLiveUser(sessionId, role){
+    const u = findLiveUser(sessionId) || spawnLiveUser(sessionId);
+    if (role) u.role = role;
+    return u;
   }
 
   /* ------------------------------------------------------------------
@@ -1062,13 +1076,13 @@
      ------------------------------------------------------------------ */
 
   function onLiveUserAppeared(envelope){
-    getOrSpawnLiveUser(envelope.session_id);
+    getOrSpawnLiveUser(envelope.session_id, envelope.payload.user_role);
   }
 
   function onLiveScheduleOpened(envelope){
     const w = findWorkshop(envelope.payload.workshop_id);
     if (!w) return;
-    const u = getOrSpawnLiveUser(envelope.session_id);
+    const u = getOrSpawnLiveUser(envelope.session_id, envelope.payload.user_role);
     // дубликат opened для орбиты, где звезда уже находится — не дёргаем анимацию заново
     if (u.state === 'atWorkshop' && u.workshop && u.workshop.id === w.id) return;
     startBookingInit(u, performance.now(), w);
@@ -1081,7 +1095,7 @@
   }
 
   function onLiveBookingCreated(envelope){
-    const u = getOrSpawnLiveUser(envelope.session_id);
+    const u = getOrSpawnLiveUser(envelope.session_id, envelope.payload.user_role);
     startBookingCreated(u, performance.now());
   }
 
@@ -1105,6 +1119,7 @@
 
     sessions.forEach((session) => {
       const u = spawnLiveUser(session.session_id);
+      u.role = session.user_role;
       u.opacity = 1;
 
       if (session.state === 'orbiting'){
