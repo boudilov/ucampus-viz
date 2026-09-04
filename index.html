@@ -1019,7 +1019,14 @@
     || (window.location.hostname === 'ucampus.u.university' ? '' : 'https://ucampus.u.university')
   ).replace(/\/$/, '');
 
-  const LIVE_DOT_SIZE = 3; // у бэкенда нет поля size — точки живых мастерских одного размера
+  // у бэкенда нет поля size — размеры точек заданы вручную (id мастерской → 1..5),
+  // 0 значит "не показывать эту мастерскую вовсе"; для мастерской не из списка
+  // (например, новой на бэкенде) — LIVE_DOT_SIZE_DEFAULT
+  const LIVE_WORKSHOP_SIZES = {
+    15: 1, 11: 4, 23: 1, 10: 3, 8: 4, 6: 2, 4: 3, 14: 0, 9: 5,
+    26: 5, 7: 2, 13: 3, 16: 5, 22: 0, 12: 0, 25: 1, 27: 2, 28: 4
+  };
+  const LIVE_DOT_SIZE_DEFAULT = 3;
   const liveWorkshops = new Map(); // id -> сырые данные с бэкенда (name, name_en, slug, cover_url)
 
   const hudStatusEl = document.getElementById('hud-status');
@@ -1199,9 +1206,16 @@
 
     workshopsRes.workshops.forEach((w) => liveWorkshops.set(w.id, w));
 
+    // size: 0 в LIVE_WORKSHOP_SIZES — мастерская скрыта целиком (не попадает в workshopDefs,
+    // сессии на ней просто не пристыковываются — см. guard'ы на findWorkshop() ниже)
+    const visibleWorkshops = workshopsRes.workshops.filter((w) => {
+      const size = LIVE_WORKSHOP_SIZES[w.id];
+      return size === undefined || size > 0;
+    });
+
     // у бэкенда position бывает null — сортируем вручную (nullish-safe) и
     // переприсваиваем чистый последовательный порядок для layoutWorkshops()
-    const sortedWorkshops = workshopsRes.workshops.slice().sort((a, b) => {
+    const sortedWorkshops = visibleWorkshops.slice().sort((a, b) => {
       if (a.position == null && b.position == null) return a.id - b.id;
       if (a.position == null) return 1;
       if (b.position == null) return -1;
@@ -1212,7 +1226,7 @@
       id: w.id,
       name: w.name,
       short_name: null,
-      size: LIVE_DOT_SIZE,
+      size: LIVE_WORKSHOP_SIZES[w.id] !== undefined ? LIVE_WORKSHOP_SIZES[w.id] : LIVE_DOT_SIZE_DEFAULT,
       position: i + 1
     }));
     layoutWorkshops();
