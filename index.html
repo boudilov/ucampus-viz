@@ -1242,6 +1242,14 @@
 
   bootLive();
 
+  // ВРЕМЕННЫЙ debug-хук для диагностики "звезда не двигается на событии" — удалить после проверки
+  window.__vizDebug = {
+    get workshops(){ return workshops; },
+    get users(){ return users; },
+    get workshopDefs(){ return workshopDefs; },
+    findWorkshop,
+  };
+
   // ---------- Настройки ----------
   let SHOW_LABELS = false; // включить/выключить подписи названий мастерских
   let SHOW_ORBITS = true; // включить/выключить тонкие линии орбит
