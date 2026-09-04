@@ -204,10 +204,6 @@
 
 <div id="stats-panel">
   <span>На сцене<b id="stat-active">0</b></span>
-  <span>Подтверждено<b id="stat-created">0</b></span>
-  <span>Отменено<b id="stat-cancelled">0</b></span>
-  <span>Заблокировано<b id="stat-blocked">0</b></span>
-  <span>Ушли<b id="stat-exited">0</b></span>
 </div>
 
 <button id="info-btn" title="Горячие клавиши (I)" aria-label="Горячие клавиши">i</button>
@@ -448,20 +444,15 @@
   };
 
   // ---------- Статистика (панель справа вверху) ----------
+  // created/cancelled/blocked/exited больше не отображаются в HUD, но
+  // счётчики оставлены — ими пользуется внутренняя логика (см. их ++ в
+  // startBookingCreated/startBookingCancelled/startBookingBlocked/startLeaving)
   const STATS = { created: 0, cancelled: 0, blocked: 0, exited: 0 };
   const statsEls = {
-    active: document.getElementById('stat-active'),
-    created: document.getElementById('stat-created'),
-    cancelled: document.getElementById('stat-cancelled'),
-    blocked: document.getElementById('stat-blocked'),
-    exited: document.getElementById('stat-exited')
+    active: document.getElementById('stat-active')
   };
   function updateStatsPanel(){
     statsEls.active.textContent = users.length;
-    statsEls.created.textContent = STATS.created;
-    statsEls.cancelled.textContent = STATS.cancelled;
-    statsEls.blocked.textContent = STATS.blocked;
-    statsEls.exited.textContent = STATS.exited;
   }
 
   // ---------- Эмбиент-звук: фоновый гул, реагирующий на активность сцены ----------
