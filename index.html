@@ -1071,6 +1071,12 @@
   }
 
   function onLiveScheduleOpened(envelope){
+    if (envelope.payload.workshop_id == null){
+      // бэкенд иногда не кладёт workshop_id в это событие (расхождение с websocket-events.md) —
+      // без него мы не знаем, к какой орбите лететь, звезда остаётся на прежнем месте
+      console.warn('user.schedule.opened без workshop_id — звезда не пристыкуется', envelope);
+      return;
+    }
     const w = findWorkshop(envelope.payload.workshop_id);
     if (!w) return;
     const u = getOrSpawnLiveUser(envelope.session_id, envelope.payload.user_role);
@@ -1241,14 +1247,6 @@
   }
 
   bootLive();
-
-  // ВРЕМЕННЫЙ debug-хук для диагностики "звезда не двигается на событии" — удалить после проверки
-  window.__vizDebug = {
-    get workshops(){ return workshops; },
-    get users(){ return users; },
-    get workshopDefs(){ return workshopDefs; },
-    findWorkshop,
-  };
 
   // ---------- Настройки ----------
   let SHOW_LABELS = false; // включить/выключить подписи названий мастерских
