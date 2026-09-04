@@ -204,12 +204,14 @@
       <tr><td>U</td><td>показать/скрыть id пользователей</td></tr>
       <tr><td>R</td><td>включить/выключить вращение фона</td></tr>
       <tr><td>M</td><td>показать/скрыть "звёзды" мастерских</td></tr>
+      <tr><td>E</td><td>показать/скрыть панель эмуляции и настроек</td></tr>
+      <tr><td>S</td><td>включить/выключить звук</td></tr>
       <tr><td>I</td><td>показать/скрыть это окно</td></tr>
     </table>
   </div>
 </div>
 
-<div id="settings-panel">
+<div id="settings-panel" hidden>
   <div class="settings-header">
     <h2>Эмуляция</h2>
     <button id="reset-btn" title="Сбросить эмуляцию и отрисовку">Reset</button>
@@ -1203,6 +1205,10 @@
   infoClose.addEventListener('click', closeInfoModal);
   infoModal.querySelector('#info-modal-backdrop').addEventListener('click', closeInfoModal);
 
+  // панель эмуляции/настроек скрыта по умолчанию (атрибут hidden в разметке) — только по клавише E
+  const settingsPanelEl = document.getElementById('settings-panel');
+  const soundCheckbox = document.getElementById('set-sound');
+
   window.addEventListener('keydown', (e) => {
     if (e.key === 'l' || e.key === 'L'){
       SHOW_LABELS = !SHOW_LABELS;
@@ -1218,6 +1224,13 @@
     }
     if (e.key === 'm' || e.key === 'M'){
       SHOW_WORKSHOPS = !SHOW_WORKSHOPS;
+    }
+    if (e.key === 'e' || e.key === 'E'){
+      settingsPanelEl.hidden = !settingsPanelEl.hidden;
+    }
+    if (e.key === 's' || e.key === 'S'){
+      soundCheckbox.checked = !soundCheckbox.checked;
+      soundCheckbox.dispatchEvent(new Event('change'));
     }
     if (e.key === 'i' || e.key === 'I'){
       toggleInfoModal();
