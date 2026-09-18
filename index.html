@@ -499,7 +499,7 @@
       osc.frequency.value = baseFreq;
       osc.detune.value = cents;
       const g = audioCtx.createGain();
-      g.gain.value = 0.33;
+      g.gain.value = 0.165; // вдвое тише гул (не трогаем masterGain — он общий со щелчком брони)
       osc.connect(g);
       g.connect(filterNode);
       osc.start();
